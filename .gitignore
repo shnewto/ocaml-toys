@@ -27,3 +27,11 @@ setup.log
 
 # Local OPAM switch
 _opam/
+
+.exercism/
+dune
+dune-project
+Makefile
+*.mli
+test.ml
+**/**/README.md
