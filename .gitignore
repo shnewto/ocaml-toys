@@ -34,4 +34,4 @@ dune-project
 Makefile
 *.mli
 test.ml
-**/**/README.md
+**/**/*.md
