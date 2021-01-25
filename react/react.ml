@@ -16,60 +16,18 @@ type 'a cell = {
     refs: ((('a cell) ref) list) ref;
 } 
 
-let create_id =
-  let n = ref 0 in
-  fun () ->
-    let id = !n in
-    Int.incr n;
-    id
-
 let rec value_of { kind; _ } =
     match kind with 
     | Input v -> !v
     | Compute_1 (c, f) -> f (value_of !c)
     | Compute_2 (c1, c2, f) -> f (value_of !c1) (value_of !c2)
 
-let cell_val_eq cell v = 
-    !(cell.eq) v (value_of cell)
-
-let callbacks_do cell =
-    let already_called = ref [] in
-    let do_call id = 
-        match List.find ~f:(fun t -> t = !id) !already_called with
-        | None -> already_called := !id::!already_called; true 
-        | _ -> false 
-    in
-    (* List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks) *)
-    List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks)
-
-let iterate_cell_callbacks cells_with_vals = 
-    let already_called = ref [] in 
-    let called id = 
-        match List.find ~f:(fun t -> t = id) !already_called with
-        | None -> already_called := id::!already_called; false 
-        | _ -> true 
-    in
-    List.iter ~f:(fun (old_val, cell) -> if (cell_val_eq cell old_val) || (called cell.id) then () else callbacks_do cell) cells_with_vals 
-
-let ref_cells_with_vals cell_top = 
-    let refs = ref [] in
-    let rec loop cell_param = 
-        match !(cell_param.refs) with
-        | [] -> ()
-        | cells_matched -> refs := List.append !refs cells_matched; List.iter ~f:(fun cell -> loop !cell) cells_matched
-    in loop cell_top;
-
-    List.map ~f:(fun c -> ((value_of !c), !c)) !refs
-
-let set_value cell new_value =
-    let cells_with_vals = 
-        match cell.kind with 
-        | Input v -> Some(v, (!v, cell)::(ref_cells_with_vals cell))
-        | _ -> None
-    in 
-    match (cells_with_vals) with 
-    | Some(v, cells) -> if !(cell.eq) !v new_value then () else (v := new_value; iterate_cell_callbacks cells)
-    | None -> ()
+let create_id =
+  let n = ref 0 in
+  fun () ->
+    let id = !n in
+    Int.incr n;
+    id
 
 let create_input_cell ~value ~eq = {
     id = create_id ();
@@ -104,11 +62,52 @@ let create_compute_cell_2 c1 c2 ~f ~eq =
     c2.refs := (ref compute_cell) :: !(c2.refs);
     compute_cell
 
-let add_callback cell ~k =
+let add_callback { callbacks; _ } ~k =
     let id = create_id () in
-    cell.callbacks := (ref id, ref k) :: !(cell.callbacks);
+    callbacks := (ref id, ref k) :: !callbacks;
     id
 
 let remove_callback { callbacks; _ } id =
     callbacks := List.filter ~f:(fun (i, _) -> if !i <> id then true else false ) !callbacks;
-    
+    ()
+
+let cell_val_eq cell v = 
+    !(cell.eq) v (value_of cell)
+
+let callbacks_do cell =
+    let already_called = ref [] in
+    let do_call id = 
+        match List.find ~f:(fun t -> t = !id) !already_called with
+        | None -> already_called := !id::!already_called; true 
+        | _ -> false 
+    in
+    (* List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks) *)
+    List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks)
+
+let iterate_cell_callbacks cells_with_vals = 
+    let already_called = ref [] in 
+    let called id = 
+        match List.find ~f:(fun t -> t = id) !already_called with
+        | None -> already_called := id::!already_called; false 
+        | _ -> true 
+    in
+    List.iter ~f:(fun (old_val, cell) -> if (cell_val_eq cell old_val) || (called cell.id) then () else callbacks_do cell) cells_with_vals 
+
+let ref_cells_with_vals cell_top = 
+    let refs = ref [] in
+    let rec loop cell_param = 
+        match !(cell_param.refs) with
+        | [] -> ()
+        | cells_matched -> refs := List.append !refs cells_matched; List.iter ~f:(fun cell -> loop !cell) cells_matched
+    in loop cell_top;
+    List.map ~f:(fun c -> ((value_of !c), !c)) !refs
+
+let set_value cell new_value =
+    let cells_with_vals = 
+        match cell.kind with 
+        | Input v -> Some(v, (!v, cell)::(ref_cells_with_vals cell))
+        | _ -> None
+    in 
+    match (cells_with_vals) with 
+    | Some(v, cells) -> if !(cell.eq) !v new_value then () else v := new_value; iterate_cell_callbacks cells
+    | None -> ()
