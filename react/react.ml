@@ -9,13 +9,14 @@ type ('a, 'b) cell_kind =
     | Compute_2 of ('b ref) * ('b ref) * ('a -> 'a -> 'a)
 
 type 'a cell = { 
+    id: int;
     eq: ('a -> 'a -> bool) ref; 
     callbacks: (((callback_id ref) * (('a -> unit) ref)) list) ref;
     kind: ('a, 'a cell) cell_kind;
     refs: ((('a cell) ref) list) ref;
 } 
 
-let create_callback_id =
+let create_id =
   let n = ref 0 in
   fun () ->
     let id = !n in
@@ -62,7 +63,13 @@ let callbacks_do cell =
     List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks)
 
 let iterate_cell_callbacks cells_with_vals = 
-    List.iter ~f:(fun (old_val, cell) -> if cell_val_eq cell old_val then () else callbacks_do cell) cells_with_vals 
+    let already_called = ref [] in 
+    let called id = 
+        match List.find ~f:(fun t -> t = id) !already_called with
+        | None -> already_called := id::!already_called; false 
+        | _ -> true 
+    in
+    List.iter ~f:(fun (old_val, cell) -> if (cell_val_eq cell old_val) || (called cell.id) then () else callbacks_do cell) cells_with_vals 
 
 let ref_cells_with_vals cell = 
     List.map ~f:(fun c -> ((value_of !c), !c)) !(cell.refs)
@@ -78,6 +85,7 @@ let set_value cell new_value =
     | None -> ()
 
 let create_input_cell ~value ~eq = {
+    id = create_id ();
     eq = ref eq; 
     callbacks = ref []; 
     kind = Input (ref value);
@@ -86,6 +94,7 @@ let create_input_cell ~value ~eq = {
 
 let create_compute_cell_1 c ~f ~eq = 
     let compute_cell = {
+        id = create_id ();
         eq = ref eq; 
         callbacks = ref [];
         kind = (Compute_1 (ref c, f));
@@ -97,6 +106,7 @@ let create_compute_cell_1 c ~f ~eq =
 
 let create_compute_cell_2 c1 c2 ~f ~eq = 
     let compute_cell = {
+        id = create_id ();
         eq = ref eq; 
         callbacks = ref [];
         kind = Compute_2 (ref c1, ref c2, f); 
@@ -108,7 +118,7 @@ let create_compute_cell_2 c1 c2 ~f ~eq =
     compute_cell
 
 let add_callback cell ~k =
-    let id = create_callback_id () in
+    let id = create_id () in
     cell.callbacks := (ref id, ref k) :: !(cell.callbacks);
     id
 
