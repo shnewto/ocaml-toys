@@ -29,26 +29,6 @@ let rec value_of { kind; _ } =
     | Compute_1 (c, f) -> f (value_of !c)
     | Compute_2 (c1, c2, f) -> f (value_of !c1) (value_of !c2)
 
-(* let conditional_callback used_callback_ids new_value cell curr_id callback_f = 
-    if !(!cell.eq) new_value (value_of !cell) then used_callback_ids 
-    else 
-    match List.find ~f:(fun used_id -> !used_id = !curr_id) used_callback_ids with 
-    | None -> !callback_f (value_of !cell); curr_callback_id::used_callback_ids 
-    | _ -> used_callback_ids
-
-let unconditional_callback used_callback_ids cell curr_id callback_f = 
-    match List.find ~f:(fun used_id -> !used_id = !curr_id) used_callback_ids with 
-    | None -> !callback_f (value_of cell); curr_callback_id::used_callback_ids
-    | _ -> used_callback_ids
-
-(* let update_refs cell =  *)
-let callbacks_do cell refs = 
-    let callback_ids = 
-    List.fold ~init:[] ~f:(fun acc (v, c) -> List.fold ~init:acc ~f:(fun used_ids (i, f) -> conditional_callback used_ids v c i f) !(!c.callbacks)) refs 
-    in
-    let _ = List.fold ~init:callback_ids ~f:(fun used_ids (i, f) -> unconditional_callback used_ids cell i f) !(cell.callbacks) in
-    () *)
-
 let cell_val_eq cell v = 
     !(cell.eq) v (value_of cell)
 
