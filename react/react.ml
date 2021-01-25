@@ -71,8 +71,15 @@ let iterate_cell_callbacks cells_with_vals =
     in
     List.iter ~f:(fun (old_val, cell) -> if (cell_val_eq cell old_val) || (called cell.id) then () else callbacks_do cell) cells_with_vals 
 
-let ref_cells_with_vals cell = 
-    List.map ~f:(fun c -> ((value_of !c), !c)) !(cell.refs)
+let ref_cells_with_vals cell_top = 
+    let refs = ref [] in
+    let rec loop cell_param = 
+        match !(cell_param.refs) with
+        | [] -> ()
+        | cells_matched -> refs := List.append !refs cells_matched; List.iter ~f:(fun cell -> loop !cell) cells_matched
+    in loop cell_top;
+
+    List.map ~f:(fun c -> ((value_of !c), !c)) !refs
 
 let set_value cell new_value =
     let cells_with_vals = 
