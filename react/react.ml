@@ -81,7 +81,6 @@ let callbacks_do cell =
         | None -> already_called := !id::!already_called; true 
         | _ -> false 
     in
-    (* List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks) *)
     List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks)
 
 let iterate_cell_callbacks cells_with_vals = 
