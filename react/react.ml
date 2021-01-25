@@ -1,32 +1,7 @@
 open Base 
 open Base.Ref 
 
-(* module type MUTABLE_CALLBACK_MAP =
-    sig
-        type 'a mcallback_map
-
-        val empty : unit -> 'a mcallback_map
-
-        val add : callback_id -> 'a mstack -> 'a -> unit
-
-        val get : 'a mstack -> 'a option
-    end
-
-module MutableCallbackMap : MUTABLE_CALLBACK_MAP =
-    struct
-        type 'a mcallback_map = (('a callback) Map.M(Int).t) ref
-
-        let empty () : 'a mcallback_map = ref (Map.empty (module Base.Int))
-
-        let add (m:'a mcallback_map) (k:callback_id) (d:'a callback) : unit =
-            m := Map.add (!m) ~key:k ~data:d
-        
-        let remove (m:'a mcallback_map) (k:callback_id) : unit =
-            m := Map.remove (!m) k
-    end *)
-
 type callback_id = int
-
 
 type ('a, 'b) cell_kind =
     | Input of ('a ref)
@@ -35,22 +10,17 @@ type ('a, 'b) cell_kind =
 
 type 'a cell = { 
     eq: ('a -> 'a -> bool) ref; 
-    callbacks: ((int * ('a -> unit)) list) ref;
-    incr_next: callback_id ref;
+    callbacks: (((callback_id ref) * (('a -> unit) ref)) list) ref;
     kind: ('a, 'a cell) cell_kind;
+    refs: ((('a cell) ref) list) ref;
 } 
 
-(* 
-type 'a cell_kind =
-    | Input of ('a ref)
-    | Compute_1 of ('a ref) * ('a -> 'a)
-    | Compute_2 of ('a ref) * ('a ref) * ('a -> 'a -> 'a)
- *)
-
-let set_value { kind; callbacks; _ } new_value =
-    match kind with 
-    | Input v -> v := new_value; let _ = List.for_all ~f:(fun (_, f) -> f !(v); true ) !(callbacks) in ();
-    | _ -> ()
+let create_callback_id =
+  let n = ref 0 in
+  fun () ->
+    let id = !n in
+    Int.incr n;
+    id
 
 let rec value_of { kind; _ } =
     match kind with 
@@ -58,32 +28,90 @@ let rec value_of { kind; _ } =
     | Compute_1 (c, f) -> f (value_of !c)
     | Compute_2 (c1, c2, f) -> f (value_of !c1) (value_of !c2)
 
+(* let conditional_callback used_callback_ids new_value cell curr_id callback_f = 
+    if !(!cell.eq) new_value (value_of !cell) then used_callback_ids 
+    else 
+    match List.find ~f:(fun used_id -> !used_id = !curr_id) used_callback_ids with 
+    | None -> !callback_f (value_of !cell); curr_callback_id::used_callback_ids 
+    | _ -> used_callback_ids
+
+let unconditional_callback used_callback_ids cell curr_id callback_f = 
+    match List.find ~f:(fun used_id -> !used_id = !curr_id) used_callback_ids with 
+    | None -> !callback_f (value_of cell); curr_callback_id::used_callback_ids
+    | _ -> used_callback_ids
+
+(* let update_refs cell =  *)
+let callbacks_do cell refs = 
+    let callback_ids = 
+    List.fold ~init:[] ~f:(fun acc (v, c) -> List.fold ~init:acc ~f:(fun used_ids (i, f) -> conditional_callback used_ids v c i f) !(!c.callbacks)) refs 
+    in
+    let _ = List.fold ~init:callback_ids ~f:(fun used_ids (i, f) -> unconditional_callback used_ids cell i f) !(cell.callbacks) in
+    () *)
+
+let cell_val_eq cell v = 
+    !(cell.eq) v (value_of cell)
+
+let callbacks_do cell =
+    let already_called = ref [] in
+    let do_call id = 
+        match List.find ~f:(fun t -> t = !id) !already_called with
+        | None -> already_called := !id::!already_called; true 
+        | _ -> false 
+    in
+    (* List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks) *)
+    List.iter ~f:(fun (id, f) -> if do_call id then !f (value_of cell) else ()) !(cell.callbacks)
+
+let iterate_cell_callbacks cells_with_vals = 
+    List.iter ~f:(fun (old_val, cell) -> if cell_val_eq cell old_val then () else callbacks_do cell) cells_with_vals 
+
+let ref_cells_with_vals cell = 
+    List.map ~f:(fun c -> ((value_of !c), !c)) !(cell.refs)
+
+let set_value cell new_value =
+    let cells_with_vals = 
+        match cell.kind with 
+        | Input v -> Some(v, (!v, cell)::(ref_cells_with_vals cell))
+        | _ -> None
+    in 
+    match (cells_with_vals) with 
+    | Some(v, cells) -> if !(cell.eq) !v new_value then () else (v := new_value; iterate_cell_callbacks cells)
+    | None -> ()
+
 let create_input_cell ~value ~eq = {
     eq = ref eq; 
     callbacks = ref []; 
-    incr_next = ref 0;
     kind = Input (ref value);
+    refs = ref [];
 }
 
-let create_compute_cell_1 c ~f ~eq = {
-    eq = ref eq; 
-    callbacks = ref [];
-    incr_next = ref 0; 
-    kind = (Compute_1 (ref c, f));
-}
+let create_compute_cell_1 c ~f ~eq = 
+    let compute_cell = {
+        eq = ref eq; 
+        callbacks = ref [];
+        kind = (Compute_1 (ref c, f));
+        refs = ref [];
+    }
+    in 
+    c.refs := (ref compute_cell) :: !(c.refs);
+    compute_cell
 
-let create_compute_cell_2 c1 c2 ~f ~eq = {
-    eq = ref eq; 
-    callbacks = ref []; 
-    incr_next = ref 0;
-    kind = Compute_2 (ref c1, ref c2, f); 
-}
+let create_compute_cell_2 c1 c2 ~f ~eq = 
+    let compute_cell = {
+        eq = ref eq; 
+        callbacks = ref [];
+        kind = Compute_2 (ref c1, ref c2, f); 
+        refs = ref [];
+    }
+    in 
+    c1.refs := (ref compute_cell) :: !(c1.refs);
+    c2.refs := (ref compute_cell) :: !(c2.refs);
+    compute_cell
 
-let add_callback { incr_next; callbacks; _ } ~k =
-    incr_next := !(incr_next) + 1;
-    callbacks := (!(incr_next), k)::!(callbacks);
-    !(incr_next)
+let add_callback cell ~k =
+    let id = create_callback_id () in
+    cell.callbacks := (ref id, ref k) :: !(cell.callbacks);
+    id
 
 let remove_callback { callbacks; _ } id =
-    callbacks := List.filter ~f:(fun (i, _) -> if i <> id then true else false ) !(callbacks);
+    callbacks := List.filter ~f:(fun (i, _) -> if !i <> id then true else false ) !callbacks;
     
